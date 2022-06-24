@@ -7,4 +7,4 @@ T-Shphere is an application and an open source project that enable the user to e
 * Data are being loaded to the memory then processed. You might need large RAM space for processing large files. 
 
 # Release:
-Version 1.0 available for download [here](https://github.com/TheOathMan/T-Shphere/releases)
+Binary for T-Shphere v1.1 is a available for [download](https://github.com/TheOathMan/T-Shphere/releases).
