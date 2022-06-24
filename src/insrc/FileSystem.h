@@ -43,9 +43,9 @@ int DynamicCompress(std::string path, std::string out_file_name,std::string pass
 int DynamicDecompress(std::string target, std::string dest_folder,std::string passport);    // the destination folder the decompression will go into
 int CompressCollection(std::vector<std::string> paths, std::string dist_folder, std::string outfname,std::string passport);
 
-void copyDir(const char* path, const char* to);
-void copyFile(const char* path, const char* to);
-void RemoveDir(const std::string& path);
+int copyDir(const char* path, const char* to);
+int copyFile(const char* path, const char* to);
+int RemoveDir(const std::string& path);
 
 bool Is_path_valid(const char* path);
 bool Is_path_valid(const wchar_t* path);

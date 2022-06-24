@@ -38,7 +38,7 @@ struct InfoBlockContainters{
     std::string folders_index; // folder index
     std::string files;
     std::string files_index;   // file index into the folder index. -1 being the main root 0 being in the first folder and so on
-
+    int err = 0;
     void Reserve(){
         sizes.reserve(512);
         folders.reserve(1024);
@@ -201,7 +201,6 @@ InfoBlockContainters GetFolderInfoBlock_Exc(const wchar_t* _str,std::string rec_
     ReadDir rd(_str);
     static wchar_t buff[MAX_FILE_NAME];
 
-
     if(!rd.is_good()){ // We have a single file
         FileInfo fn(_str,false);
         if(fn.is_good()){
@@ -212,8 +211,7 @@ InfoBlockContainters GetFolderInfoBlock_Exc(const wchar_t* _str,std::string rec_
             file_res.push_back(Sep_sign);
             sizes_res.append(Stringed_size(fn.get_size()));
         }
-        else
-            return InfoBlockContainters();
+        else  block.err = 1;
         return block;
     }
     // retrive all files at current path
@@ -233,8 +231,10 @@ InfoBlockContainters GetFolderInfoBlock_Exc(const wchar_t* _str,std::string rec_
         FileInfo fn(wstr.c_str(),false);
         if(fn.is_good())
             sizes_res.append(Stringed_size(fn.get_size())); 
-        else 
-            return InfoBlockContainters();
+        else {
+            block.err = 1;
+            return block;
+        }
     }
 
     // save the root folder at the start of the folder/folderi sextion
@@ -259,11 +259,12 @@ InfoBlockContainters GetFolderInfoBlock_Exc(const wchar_t* _str,std::string rec_
 
        // start a recursive access then append indexed path (path as an index)
        std::string rec_n = rec_count;
-       rec_n.append(std::to_string(i-2));
+       rec_n.append(std::to_string(i));
+       //DEBUG_LOG(i-2 << " " << rec_n);
        rec_n.append("-");
        
        InfoBlockContainters temp_block = GetFolderInfoBlock_Exc(wpt.c_str(),rec_n);
-
+       if(temp_block.err) return temp_block;
        // append indexed path prior to the recursive process
        folderi_res.append(rec_n);
        folderi_res.back() = Sep_sign;
@@ -287,7 +288,9 @@ InfoBlockContainters GetFolderInfoBlock_Exc(const wchar_t* _str,std::string rec_
 // provide a path to a folder, and get a block of string containing all of its contents info.
 int GetFolderInfoBlock(const wchar_t* path, std::string& out_result){
     InfoBlockContainters block = GetFolderInfoBlock_Exc(path);
-    if(!wcslen(path) ||  (block.files.empty() && block.folders.empty()) ) return 0;
+    if(block.err) return 0;
+    if(!wcslen(path)) return -1;
+    if((block.files.empty() && block.folders.empty()) ) return -2;
 
     if(block.folders.empty()) { 
         out_result.append("**");
@@ -527,8 +530,8 @@ int DynamicCompress(std::string path, std::string out_file_name,std::string pass
     infob.reserve(MAX_PATH);
     Normal_stat("Preparing files",0.0f);
     int file_type = GetFolderInfoBlock(path.c_str(),infob);
-    if(file_type == 0){
-        Error_stat("Failed no data");
+    if(file_type <= 0){
+        Error_stat(file_type == 0 ? "file or folder name error" : file_type == -1 ? "path error" : "empty folder");
         return 0; // no data block fail
     }
 
@@ -641,7 +644,7 @@ int DynamicDecompress(std::string target,std::string dest_folder,std::string pas
     Dynamic_strcpy(buff,target.c_str());
     FileInfo fn(VREF(buff),false);
     if(!fn.is_good()){
-        Error_stat("File not valid");
+        Error_stat("File unvalid");
         return -4;
     }
     Normal_stat("Preparing files",0.0f);
@@ -748,9 +751,10 @@ int DynamicDecompress(std::string target,std::string dest_folder,std::string pas
 }
 
 
-void copyDir(const char* path, const char* to){
+int copyDir(const char* path, const char* to){
     std::string infob;
     int file_type = GetFolderInfoBlock(path,infob);
+    if(file_type<=0) return 0; 
     BlockSection iblock;
     int res = Extract_info_block(infob.data(),iblock);
     mkdir(to);
@@ -776,28 +780,31 @@ void copyDir(const char* path, const char* to){
         fwr.close();
         fr.freedat();
     }
-    
+    return 1; 
 }
-void copyFile(const char* path, const char* to){
-
+int copyFile(const char* path, const char* to){
     std::string str = path;
     char* p = CutStrToFile(&str[0]);
     std::ifstream src(path, BIN_WRITE);
+    if(!src.good()) return 0;
     std::string top = to;
     if(strlen(to))
         top.append("\\");
     top.append(p);
     std::ofstream dest((top).c_str(), BIN_WRITE);
+    if(!dest.good()) return 0;
     dest << src.rdbuf();
     dest.close();
     src.close();
+    return 1;
 }
 
 
-void RemoveDir(const std::string& path){
-    if(!path.size()) return;
+int RemoveDir(const std::string& path){
+    if(!path.size()) return 0;
     std::string infob;
     int file_type = GetFolderInfoBlock(path.c_str(),infob);
+    if(file_type <= 0) return 0;
     BlockSection iblock;
     int res = Extract_info_block(infob.data(),iblock);
 
@@ -817,6 +824,7 @@ void RemoveDir(const std::string& path){
     std::reverse(folder_paths.begin(),folder_paths.end());
     for(auto&&I:files_paths)  {remove(I.c_str());}
     for(auto&&I:folder_paths) {rmdir(I.c_str());}
+    return 1;
 }
 
 std::string To_temp_path(){
@@ -831,8 +839,10 @@ int CompressCollection(std::vector<std::string> paths, std::string dist_folder, 
     if(dist_folder.empty()) return 0;
 
     std::string temp_path = To_temp_path();
-    if(!temp_path.size()) 
+    if(!temp_path.size()) {
+        Error_stat("temp path not found");
         return -1; // temp path not found
+    }
     
 
     //std::string tempdist = temp_p;
@@ -853,10 +863,17 @@ int CompressCollection(std::vector<std::string> paths, std::string dist_folder, 
         FileInfo fn(VREF(buff));
 
         if(fn.get_type() == "Directory"){
-            copyDir(paths[i].c_str(),temp_path.c_str());
+            if(!copyDir(paths[i].c_str(),temp_path.c_str())){
+                Error_stat("failed while Copying a folder");
+                return -2;
+            }
         }
         if(fn.get_type() == "File"){
-            copyFile(paths[i].c_str(),temp_path.c_str());
+            
+            if(!copyFile(paths[i].c_str(),temp_path.c_str())){
+                Error_stat("failed while Copying a file");
+                 return -3;
+            }
         }
     }
 
@@ -864,7 +881,7 @@ int CompressCollection(std::vector<std::string> paths, std::string dist_folder, 
     RemoveDir(Base);
     if(res > 0)
         return 1;
-    return -2;
+    return -10;
 }
 
 bool Is_path_valid(const char* path){
@@ -875,3 +892,9 @@ bool Is_path_valid(const char* path){
 }
 bool Is_path_valid(const wchar_t* path){ FileInfo is_path_valid (path,false);  return is_path_valid.is_good(); }
 
+
+//!when file or folder couldn't be read, eject
+void recfolders(const std::wstring& path){
+
+
+}
